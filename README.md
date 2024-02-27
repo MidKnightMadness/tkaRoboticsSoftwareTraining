@@ -1,4 +1,4 @@
-## TEMPLATE GUIDE
+## SOFTWARE TRAINING GUIDE
 The FTC SDK will have updates from time to time. Here is what you need to do when that happens.
 1. Go to the github repository for this project
 2. Click on "sync with master"
