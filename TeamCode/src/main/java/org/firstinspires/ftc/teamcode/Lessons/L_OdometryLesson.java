@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode.Lessons;
 
-import com.arcrobotics.ftclib.drivebase.MecanumDrive;
 import com.arcrobotics.ftclib.hardware.motors.Motor;
 import com.arcrobotics.ftclib.hardware.motors.MotorEx;
 import com.arcrobotics.ftclib.kinematics.HolonomicOdometry;
@@ -25,8 +24,6 @@ public class L_OdometryLesson extends OpMode {
     public static final double DISTANCE_PER_PULSE = Math.PI * WHEEL_DIAMETER / TICKS_PER_REV;
 
     private MotorEx frontLeft, frontRight, backLeft, backRight;
-    private MecanumDrive driveTrain;
-    private Motor intakeLeft, intakeRight, liftLeft, liftRight;
     private Motor.Encoder leftOdometer, rightOdometer, centerOdometer;
     private HolonomicOdometry odometry;
 
@@ -36,13 +33,6 @@ public class L_OdometryLesson extends OpMode {
         frontRight = new MotorEx(hardwareMap, "front_right");
         backLeft = new MotorEx(hardwareMap, "back_left");
         backRight = new MotorEx(hardwareMap, "back_right");
-
-        driveTrain = new MecanumDrive(frontLeft, frontRight, backLeft, backRight);
-
-        intakeLeft = new Motor(hardwareMap, "intake_left");
-        intakeRight = new Motor(hardwareMap, "intake_right");
-        liftLeft = new Motor(hardwareMap, "lift_left");
-        liftRight = new Motor(hardwareMap, "lift_right");
 
         // Here we set the distance per pulse of the odometers.
         // This is to keep the units consistent for the odometry.
