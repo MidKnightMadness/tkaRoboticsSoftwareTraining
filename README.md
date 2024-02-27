@@ -10,7 +10,9 @@ To see if your changes work do these steps.
 4. Look at both "Inspect Driver Station" and "Inspect Robot Controller" and make sure everything is green/checked
 Sometimes it may not be checked even when you update the FTC SDK. You may need to update the hardware (control hub/driver station) in that case
 
-This template uses two library called ftclib and ftc dashboard. Make sure they are up to date by going to "build.dependencies.gradle" and looking at the last 2 lines in dependencies
+This template uses two library called ftclib and ftc dashboard. Make sure they are up to date by going to "build.gradle.TeamCode" and looking at the last 2 lines in dependencies
+
+The stuff below was written by FTC organizers. Has some basic info/resources that you can use
 
 ## NOTICE
 
