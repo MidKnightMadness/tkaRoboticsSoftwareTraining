@@ -1,0 +1,352 @@
+import java.util.ArrayList;
+
+/* Meant to simulate arc and normal odometry accuracy
+ * Full processing to ticks
+ */
+
+/*
+ * Next step is to try optimal driving config with splines
+ * Next step is to try arc odometry algorithm for increased accuracy with complex movements
+ */
+
+class RobotSimulation{
+	// Odometry ====================================================================================================
+	final double [][] DEAD_WHEEL_COORDINATES = { // Front facing is 0 angle, positive x axis relative to robot
+			{-6.25, 0.0}, // Left
+			{6.25, 0.0}, // Right
+			{0.0, 1.5} // Center
+	};
+
+	final double [] WHEEL_ANGLES = {-Math.PI / 2.0d, Math.PI / 2.0d, Math.PI / 2.0d}; // Radians
+	// Also left, right, center
+	final double [] TICK_CONVERSIONS = {30.0 / 38000d, 30.0 / 38000d, 30.0 / 38000d};
+
+	double robotHeading = 0.0;
+	double [] robotCoordinates = {0.0, 0.0};
+
+	double [] ticks = {0d, 0d, 0d};
+	double [] lastTicks = {0d, 0d, 0d};
+	int [] deltaTicks = {0, 0, 0};
+	int [] readTicks = {0, 0, 0};
+	double resolution = 10d;
+
+	// April Tag Localization ======================================================================================
+	final double[][] APRIL_TAG_COORDS = { // hardcoded
+            {135d, 115d},//id 1
+            {135d, 109d},//id 2
+            {135d, 103d},//id 3
+            {135d, 41d},//id 4
+            {135d, 35d},//id 5
+            {135d, 29d},//id 6
+            {0d, 114d},//id 7 not necesarilky accurate yet
+            {0d, 108d},//id 8 not necesarilky accurate yet
+            {0d, 36d},//id 9 not necesarilky accurate yet
+            {0d, 30d}//id 10 not necesarilky accurate yet
+    };
+
+	final double RMSE_LARGE = 0.05; // All other tags
+	final double RMSE_SMALL = 0.01; // Tags 3 and 4 for some reason bruh
+
+	double fieldOfView = Math.PI / 2d; // Left and right of center
+	public ArrayList <Integer> tagsDetected = new ArrayList <> ();
+
+	public double [] perceivedBearings = new double [10];
+	public double [] perceivedRanges = new double [10];
+	public double [] perceivedYaws = new double [10];
+
+	public RobotSimulation(double x, double y, double startingHeading) {
+		robotCoordinates [0] = x;
+		robotCoordinates [1] = y;
+		robotHeading = startingHeading;
+	}
+
+	public void update(double deltaX, double deltaY, double deltaRadians) {
+		robotCoordinates [0] += deltaX;
+		robotCoordinates [1] += deltaY;
+		robotHeading += deltaRadians;
+
+		// Auxillary variables
+		double directionOfTravel = atan(deltaY,  deltaX);
+		double distanceTraveled = Math.sqrt(deltaX*deltaX + deltaY*deltaY);
+
+		// Simulation for odometry
+		for(int i = 0; i < 3; i++) {
+			// x y travel
+			ticks [i] += distanceTraveled * Math.cos(directionOfTravel - WHEEL_ANGLES [i] - atan(DEAD_WHEEL_COORDINATES[i][1], DEAD_WHEEL_COORDINATES[i][0]) - robotHeading + Math.PI / 2d) / TICK_CONVERSIONS [i];
+
+			// rotation
+			ticks [i] += deltaRadians * Math.sqrt(DEAD_WHEEL_COORDINATES[i][0]*DEAD_WHEEL_COORDINATES[i][0] + DEAD_WHEEL_COORDINATES[i][1]*DEAD_WHEEL_COORDINATES[i][1]) * Math.sin(WHEEL_ANGLES [i]) / TICK_CONVERSIONS [i];
+
+			// output ticks
+			readTicks [i] = (int) ticks [i];
+			deltaTicks[i] = (int) (ticks [i] - lastTicks [i]);
+			lastTicks [i] = ticks [i];
+		}
+
+		// Update april tag detections
+		tagsDetected.clear();
+		for(int i = 0; i < 10; i++) { // Loop through all IDs, check which ones are within field of view
+			double [] delta = {APRIL_TAG_COORDS [i][0] - robotCoordinates [0], APRIL_TAG_COORDS [i][1] - robotCoordinates [1]}; // Delta to each coord
+			double angleToTag = atan(delta [1], delta [0]); // Relative to field
+
+			if(angleToTag >= robotHeading - fieldOfView / 2d && angleToTag <= robotHeading + fieldOfView / 2d) { // If tag is theoretically visible
+				tagsDetected.add(i + 1);
+
+				perceivedBearings [i] = angleToTag - robotHeading; // No error simulated here
+				perceivedRanges [i] = Math.sqrt(delta[0]*delta[0] + delta[1]*delta[1]);
+				if(i < 6) {
+					perceivedYaws [i] = robotHeading;
+				}else {
+					perceivedYaws [i] = robotHeading - Math.PI;
+				}
+
+				// Adding in read tag pose data errors
+				if(i == 2 || i == 3) { // Factoring in random error
+					// Smaller error for tags 3 and 4
+					perceivedRanges [i] += perceivedRanges [i] * RMSE_SMALL * (2d * Math.random() - 1d);
+				}else {
+					perceivedRanges [i] += perceivedRanges [i] * RMSE_LARGE * (2d * Math.random() - 1d);
+				}
+			}else { // Tag not visible
+				perceivedBearings [i] = 0.0;
+				perceivedRanges [i] = 0.0;
+				perceivedYaws [i] = 0.0;
+			}
+		}
+	}
+
+	public static double atan(double y, double x) { // Safe
+		if(x == 0.0) {
+			if(y > 0.0) {
+				if(x < 0) {
+					return Math.PI / 2d + Math.PI;
+				}
+				return Math.PI / 2d;
+			}
+			if(x < 0) {
+				return -Math.PI / 2d + Math.PI;
+			}
+			return -Math.PI / 2d;
+		}
+		if(x < 0) {
+			return Math.atan(y / x) + Math.PI;
+		}
+		return Math.atan(y / x);
+	}
+}
+
+
+class OdometryAlgorithm{
+	// Algorithm side
+	double inPerTickLeft = 30.0 / 3800d;
+	double inPerTickRight = 30.0 / 3800d;
+	double inPerTickFront= 30.0 / 3800d;
+	double HEADING_CORRECTION = 1360d / 359.99;
+
+	double trackWidth = 12.5;
+	double distanceToFront = 1.5;
+
+	double deltaRadians = 0.0;
+	double [] deltaCoords = {0.0, 0.0};
+
+	final int tickChangeLimit = 1000;
+	boolean updatePosition = false; // If not moved enough, don't update, would have
+	double perceivedHeading = 0.0;
+	double [] perceivedCoords = {0.0, 0.0};
+
+	int numberOfUpdates = 0;
+
+	public OdometryAlgorithm(double startingX, double startingY, double startingHeading) {
+		deltaRadians = 0.0;
+		deltaCoords = new double [2];
+
+		perceivedHeading = startingHeading;
+		perceivedCoords [0] = startingX;
+		perceivedCoords [1] = startingY;
+	}
+
+	public void updatePosition(int [] deltaTicks/* Left, Right, Center */) {
+		// Check how much is moved, need to move a certain amount to remove int rounding errors
+		updatePosition = (Math.abs(deltaTicks [0]*deltaTicks [0] + deltaTicks [1]*deltaTicks [1] + deltaTicks [2]*deltaTicks [2]) > tickChangeLimit)? true : false;
+
+		if(updatePosition) {
+			// Assume left and right are positive for forward, front is positive for counterclockwise
+			deltaRadians = (deltaTicks [1] * inPerTickRight - deltaTicks [0] * inPerTickLeft) / (trackWidth);
+
+			perceivedHeading += deltaRadians;
+
+			deltaCoords [0] = -Math.sin(perceivedHeading) * (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.cos(perceivedHeading) * (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
+			deltaCoords [1] = Math.cos(perceivedHeading) * (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.sin(perceivedHeading) * (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
+
+			perceivedCoords [0] += deltaCoords [0];
+			perceivedCoords [1] += deltaCoords [1];
+		}
+	}
+}
+
+class ArcOdometryAlgorithm{
+	// Algorithm side
+	double inPerTickLeft = 30.0 / 38000d;
+	double inPerTickRight = 30.0 / 38000d;
+	double inPerTickFront= 30.0 / 38000d;
+	double HEADING_CORRECTION = 360d / 359.85;
+
+	double trackWidth = 12.5;
+	double distanceToFront = 1.5;
+
+	double deltaRadians = 0.0;
+	double [] deltaCoords = {0.0, 0.0};
+
+	boolean updatePosition = false; // If not moved enough, don't update, would have
+	final int tickChangeLimit = 1000;
+
+	double rX = 0.0; // Radius of turn in sideways direction
+	double rY = 0.0; // Radius of turn in forward direction
+
+	double perceivedSidewaysMovement = 0.0; // To the right side relative to robot
+	double perceivedForwardMovement = 0.0; // Forwards relative to robot
+
+	double realSidewaysMovement = 0.0; // With consideration of traveling in an arc
+	double realForwardMovement = 0.0; // With consideration of traveling in an arc
+
+	double perceivedHeading = 0.0;
+	double [] perceivedCoords = {0.0, 0.0};
+
+	int numberOfUpdates = 0;
+
+	RobotSimulation simulator;
+	double lastIMUAngle = 0.0;
+
+	public ArcOdometryAlgorithm(double startingX, double startingY, double startingHeading, RobotSimulation simulator) {
+		deltaRadians = 0.0;
+		deltaCoords = new double [2];
+
+		perceivedHeading = startingHeading;
+		perceivedCoords [0] = startingX;
+		perceivedCoords [1] = startingY;
+
+		this.simulator = simulator;
+		lastIMUAngle = simulator.robotHeading;
+	}
+
+	public void updatePosition(int [] deltaTicks/* Left, Right, Center */) {
+
+		// Check how much is moved, need to move a certain amount to remove int rounding errors
+		updatePosition = (Math.abs(deltaTicks [0]*deltaTicks [0] + deltaTicks [1]*deltaTicks [1] + deltaTicks [2]*deltaTicks [2]) > tickChangeLimit)? true : false;
+
+		if(updatePosition) {
+				deltaRadians = (deltaTicks [1] * inPerTickRight - deltaTicks [0] * inPerTickLeft) / (trackWidth);
+				perceivedHeading += deltaRadians;
+
+				perceivedSidewaysMovement = (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront);
+				perceivedForwardMovement = (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
+
+				if(Math.abs(deltaRadians) != 0 && Math.abs(deltaRadians) < 0.1 && Math.sqrt(perceivedSidewaysMovement*perceivedSidewaysMovement + perceivedForwardMovement*perceivedForwardMovement) < 0.5) {
+
+
+					rX = perceivedSidewaysMovement / deltaRadians; // rY is sideways
+					rY = perceivedForwardMovement / deltaRadians; // rX is forwards and backwards
+
+					realSidewaysMovement = rY * (Math.cos(deltaRadians) - 1d) + rX * Math.sin(deltaRadians);
+					realForwardMovement = rX * (1d - Math.cos(deltaRadians)) + rY * Math.sin(deltaRadians);
+
+					deltaCoords [0] = Math.cos(perceivedHeading) * realForwardMovement - Math.sin(perceivedHeading) * realSidewaysMovement;
+					deltaCoords [1] = Math.sin(perceivedHeading) * realForwardMovement + Math.cos(perceivedHeading) * realSidewaysMovement;
+
+					perceivedCoords [0] += deltaCoords [0];
+					perceivedCoords [1] += deltaCoords [1];
+				} else {
+					deltaCoords [0] = -Math.sin(perceivedHeading) * (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.cos(perceivedHeading) * (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
+					deltaCoords [1] = Math.cos(perceivedHeading) * (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.sin(perceivedHeading) * (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
+
+					perceivedCoords [0] += deltaCoords [0];
+					perceivedCoords [1] += deltaCoords [1];
+				}
+		}
+	}
+}
+
+class ArcOdometryAlgorithmForTwoWheels{ // If one side encoder is disabled
+	// Algorithm side
+	double inPerTickLeft = 30.0 / 38000d;
+	double inPerTickRight = 30.0 / 38000d;
+	double inPerTickFront= 30.0 / 38000d;
+	double HEADING_CORRECTION = 360d / 359.85;
+
+	double trackWidth = 12.5;
+	double distanceToFront = 1.5;
+
+	double lastPerceivedHeading = 0.0;
+	double deltaRadians = 0.0;
+	double [] deltaCoords = {0.0, 0.0};
+
+	boolean updatePosition = false; // If not moved enough, don't update, would have
+	final int tickChangeLimit = 500;
+
+	double rX = 0.0; // Radius of turn in sideways direction
+	double rY = 0.0; // Radius of turn in forward direction
+
+	double perceivedSidewaysMovement = 0.0; // To the right side relative to robot
+	double perceivedForwardMovement = 0.0; // Forwards relative to robot
+
+	double realSidewaysMovement = 0.0; // With consideration of traveling in an arc
+	double realForwardMovement = 0.0; // With consideration of traveling in an arc
+
+	double perceivedHeading = 0.0;
+	double [] perceivedCoords = {0.0, 0.0};
+
+	int numberOfUpdates = 0;
+
+	RobotSimulation simulator;
+	double lastIMUAngle = 0.0;
+
+	public ArcOdometryAlgorithmForTwoWheels(double startingX, double startingY, double startingHeading, RobotSimulation simulator) {
+		deltaRadians = 0.0;
+		deltaCoords = new double [2];
+
+		perceivedHeading = startingHeading;
+		perceivedCoords [0] = startingX;
+		perceivedCoords [1] = startingY;
+
+		this.simulator = simulator;
+		lastIMUAngle = simulator.robotHeading;
+	}
+
+	public void updatePosition(int [] deltaTicks/* Left, Right, Center */) {
+
+		// Check how much is moved, need to move a certain amount to remove int rounding errors
+		updatePosition = (Math.abs(deltaTicks [0]*deltaTicks [0] + deltaTicks [2]*deltaTicks [2]) > tickChangeLimit)? true : false;
+
+		if(updatePosition) {
+				perceivedHeading = simulator.robotHeading;
+				deltaRadians = perceivedHeading - lastPerceivedHeading;
+				lastPerceivedHeading = perceivedHeading;
+
+				perceivedSidewaysMovement = (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront);
+				perceivedForwardMovement = (deltaTicks [0] * inPerTickFront - deltaRadians * trackWidth / 2d);
+
+
+				if(Math.abs(deltaRadians) != 0 && Math.abs(deltaRadians) < 0.1 && Math.sqrt(perceivedSidewaysMovement*perceivedSidewaysMovement + perceivedForwardMovement*perceivedForwardMovement) < 0.5) {
+
+
+					rX = perceivedSidewaysMovement / deltaRadians; // rY is sideways
+					rY = perceivedForwardMovement / deltaRadians; // rX is forwards and backwards
+
+					realSidewaysMovement = rY * (Math.cos(deltaRadians) - 1d) + rX * Math.sin(deltaRadians);
+					realForwardMovement = rX * (1d - Math.cos(deltaRadians)) + rY * Math.sin(deltaRadians);
+
+					deltaCoords [0] = Math.cos(perceivedHeading) * realForwardMovement - Math.sin(perceivedHeading) * realSidewaysMovement;
+					deltaCoords [1] = Math.sin(perceivedHeading) * realForwardMovement + Math.cos(perceivedHeading) * realSidewaysMovement;
+
+					perceivedCoords [0] += deltaCoords [0];
+					perceivedCoords [1] += deltaCoords [1];
+				} else {
+					deltaCoords [0] = -Math.sin(perceivedHeading) * (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.cos(perceivedHeading) * (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
+					deltaCoords [1] = Math.cos(perceivedHeading) * (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.sin(perceivedHeading) * (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
+
+					perceivedCoords [0] += deltaCoords [0];
+					perceivedCoords [1] += deltaCoords [1];
+				}
+		}
+	}
+}
