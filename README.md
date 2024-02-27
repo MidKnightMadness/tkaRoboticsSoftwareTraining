@@ -1,3 +1,17 @@
+## TEMPLATE GUIDE
+The FTC SDK will have updates from time to time. Here is what you need to do when that happens.
+1. Go to the github repository for this project
+2. Click on "sync with master"
+
+To see if your changes work do these steps.
+1. Upload the project into a control hub
+2. Connect driver hub to control hub
+3. Click on the 3 dots on the top right and select "self inspect"
+4. Look at both "Inspect Driver Station" and "Inspect Robot Controller" and make sure everything is green/checked
+Sometimes it may not be checked even when you update the FTC SDK. You may need to update the hardware (control hub/driver station) in that case
+
+This template uses two library called ftclib and ftc dashboard. Make sure they are up to date by going to "build.dependencies.gradle" and looking at the last 2 lines in dependencies
+
 ## NOTICE
 
 This repository contains the public FTC SDK for the CENTERSTAGE (2023-2024) competition season.
