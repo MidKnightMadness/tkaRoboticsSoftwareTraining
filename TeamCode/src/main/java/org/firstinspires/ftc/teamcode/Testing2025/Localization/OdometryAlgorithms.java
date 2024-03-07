@@ -1,5 +1,9 @@
 package org.firstinspires.ftc.teamcode.Testing2025.Localization;
 
+/**
+ * THIS NEEDS UPDATES TO MAKE SURE TICKS ARE ACCUMULATED WHEN MEASUREMENTS ARE DEEMED TO BE SUSEPTIBLE TO ROUNDING ERRORS
+ */
+
 public class OdometryAlgorithms {
     class BasicLinearOdometryAlgorithm {
 

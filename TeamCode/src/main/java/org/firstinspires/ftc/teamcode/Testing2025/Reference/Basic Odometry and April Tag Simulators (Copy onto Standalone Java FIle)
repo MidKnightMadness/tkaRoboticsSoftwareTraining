@@ -7,7 +7,29 @@ import java.util.ArrayList;
 /*
  * Next step is to try optimal driving config with splines
  * Next step is to try arc odometry algorithm for increased accuracy with complex movements
+ * Update the conditions used to check whether or not updates should be made
  */
+
+public class OdometrySimulator{
+	static int simulationResolution = 100;
+	public static void main(String [] args) {
+		RobotSimulation simulator = new RobotSimulation(0, 0, 0d);//Math.PI / 2d);
+		ArcOdometryAlgorithmForTwoWheels odometry = new ArcOdometryAlgorithmForTwoWheels(0, 0, 0d, simulator);//Math.PI / 2d);
+
+		// Translation + rotation, returns to start
+		for(int i = 0; i < simulationResolution; i++) {
+			simulator.update(-100d / simulationResolution, 100 / simulationResolution, 6d * Math.PI / (4d * simulationResolution));
+			odometry.updatePosition(simulator.deltaTicks);
+		}
+
+		System.out.println(String.format("\nCoordinates: (%3.2f, %3.2f)", simulator.robotCoordinates [0], simulator.robotCoordinates [1]));
+		System.out.println(String.format("Heading: %5.2f", simulator.robotHeading * 180d / Math.PI));
+
+		System.out.println("\n"
+						+ String.format("Perceived coordinates: (%3.2f, %3.2f)", odometry.perceivedCoords [0], odometry.perceivedCoords [1]));
+		System.out.println(String.format("Perceived heading: %5.2f", odometry.perceivedHeading * 180d / Math.PI));
+	}
+}
 
 class RobotSimulation{
 	// Odometry ====================================================================================================
@@ -149,8 +171,10 @@ class OdometryAlgorithm{
 	double deltaRadians = 0.0;
 	double [] deltaCoords = {0.0, 0.0};
 
-	final int tickChangeLimit = 1000;
+	final int tickChangeLimit = 500;
 	boolean updatePosition = false; // If not moved enough, don't update, would have
+	int [] accumulatedTicks = {0, 0, 0}; // When measurements are small, rounding errors can occur, so we build these up before updating
+
 	double perceivedHeading = 0.0;
 	double [] perceivedCoords = {0.0, 0.0};
 
@@ -169,7 +193,12 @@ class OdometryAlgorithm{
 		// Check how much is moved, need to move a certain amount to remove int rounding errors
 		updatePosition = (Math.abs(deltaTicks [0]*deltaTicks [0] + deltaTicks [1]*deltaTicks [1] + deltaTicks [2]*deltaTicks [2]) > tickChangeLimit)? true : false;
 
+		accumulatedTicks [0] += deltaTicks [0];
+		accumulatedTicks [1] += deltaTicks [1];
+		accumulatedTicks [2] += deltaTicks [2];
+
 		if(updatePosition) {
+
 			// Assume left and right are positive for forward, front is positive for counterclockwise
 			deltaRadians = (deltaTicks [1] * inPerTickRight - deltaTicks [0] * inPerTickLeft) / (trackWidth);
 
@@ -181,6 +210,10 @@ class OdometryAlgorithm{
 			perceivedCoords [0] += deltaCoords [0];
 			perceivedCoords [1] += deltaCoords [1];
 		}
+
+		accumulatedTicks [0] = 0;
+		accumulatedTicks [1] = 0;
+		accumulatedTicks [2] = 0;
 	}
 }
 
@@ -198,7 +231,8 @@ class ArcOdometryAlgorithm{
 	double [] deltaCoords = {0.0, 0.0};
 
 	boolean updatePosition = false; // If not moved enough, don't update, would have
-	final int tickChangeLimit = 1000;
+	final int tickChangeLimit = 500;
+	int [] accumulatedTicks = {0, 0, 0}; // When measurements are small, rounding errors can occur, so we build these up before updating
 
 	double rX = 0.0; // Radius of turn in sideways direction
 	double rY = 0.0; // Radius of turn in forward direction
@@ -234,12 +268,16 @@ class ArcOdometryAlgorithm{
 		// Check how much is moved, need to move a certain amount to remove int rounding errors
 		updatePosition = (Math.abs(deltaTicks [0]*deltaTicks [0] + deltaTicks [1]*deltaTicks [1] + deltaTicks [2]*deltaTicks [2]) > tickChangeLimit)? true : false;
 
+		accumulatedTicks [0] += deltaTicks [0];
+		accumulatedTicks [1] += deltaTicks [1];
+		accumulatedTicks [2] += deltaTicks [2];
+
 		if(updatePosition) {
-				deltaRadians = (deltaTicks [1] * inPerTickRight - deltaTicks [0] * inPerTickLeft) / (trackWidth);
+				deltaRadians = (accumulatedTicks [1] * inPerTickRight - accumulatedTicks [0] * inPerTickLeft) / (trackWidth);
 				perceivedHeading += deltaRadians;
 
-				perceivedSidewaysMovement = (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront);
-				perceivedForwardMovement = (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
+				perceivedSidewaysMovement = (accumulatedTicks [2] * inPerTickFront - deltaRadians * distanceToFront);
+				perceivedForwardMovement = (accumulatedTicks [1] * inPerTickRight + accumulatedTicks [0] * inPerTickLeft) / 2d;
 
 				if(Math.abs(deltaRadians) != 0 && Math.abs(deltaRadians) < 0.1 && Math.sqrt(perceivedSidewaysMovement*perceivedSidewaysMovement + perceivedForwardMovement*perceivedForwardMovement) < 0.5) {
 
@@ -256,12 +294,17 @@ class ArcOdometryAlgorithm{
 					perceivedCoords [0] += deltaCoords [0];
 					perceivedCoords [1] += deltaCoords [1];
 				} else {
-					deltaCoords [0] = -Math.sin(perceivedHeading) * (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.cos(perceivedHeading) * (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
-					deltaCoords [1] = Math.cos(perceivedHeading) * (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.sin(perceivedHeading) * (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
+					deltaCoords [0] = -Math.sin(perceivedHeading) * (accumulatedTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.cos(perceivedHeading) * (accumulatedTicks [1] * inPerTickRight + accumulatedTicks [0] * inPerTickLeft) / 2d;
+					deltaCoords [1] = Math.cos(perceivedHeading) * (accumulatedTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.sin(perceivedHeading) * (accumulatedTicks [1] * inPerTickRight + accumulatedTicks [0] * inPerTickLeft) / 2d;
 
 					perceivedCoords [0] += deltaCoords [0];
 					perceivedCoords [1] += deltaCoords [1];
 				}
+
+				// Reset tick accumulation if updated
+				accumulatedTicks [0] = 0;
+				accumulatedTicks [1] = 0;
+				accumulatedTicks [2] = 0;
 		}
 	}
 }
@@ -282,6 +325,7 @@ class ArcOdometryAlgorithmForTwoWheels{ // If one side encoder is disabled
 
 	boolean updatePosition = false; // If not moved enough, don't update, would have
 	final int tickChangeLimit = 500;
+	int [] accumulatedTicks = {0, 0, 0}; // When measurements are small, rounding errors can occur, so we build these up before updating
 
 	double rX = 0.0; // Radius of turn in sideways direction
 	double rY = 0.0; // Radius of turn in forward direction
@@ -317,13 +361,18 @@ class ArcOdometryAlgorithmForTwoWheels{ // If one side encoder is disabled
 		// Check how much is moved, need to move a certain amount to remove int rounding errors
 		updatePosition = (Math.abs(deltaTicks [0]*deltaTicks [0] + deltaTicks [2]*deltaTicks [2]) > tickChangeLimit)? true : false;
 
+		// Accumulate ticks
+		accumulatedTicks [0] += deltaTicks [0];
+		accumulatedTicks [1] += deltaTicks [1];
+		accumulatedTicks [2] += deltaTicks [2];
+
 		if(updatePosition) {
 				perceivedHeading = simulator.robotHeading;
 				deltaRadians = perceivedHeading - lastPerceivedHeading;
 				lastPerceivedHeading = perceivedHeading;
 
-				perceivedSidewaysMovement = (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront);
-				perceivedForwardMovement = (deltaTicks [0] * inPerTickFront - deltaRadians * trackWidth / 2d);
+				perceivedSidewaysMovement = (accumulatedTicks [2] * inPerTickFront - deltaRadians * distanceToFront);
+				perceivedForwardMovement = (accumulatedTicks [0] * inPerTickFront - deltaRadians * trackWidth / 2d);
 
 
 				if(Math.abs(deltaRadians) != 0 && Math.abs(deltaRadians) < 0.1 && Math.sqrt(perceivedSidewaysMovement*perceivedSidewaysMovement + perceivedForwardMovement*perceivedForwardMovement) < 0.5) {
@@ -341,12 +390,17 @@ class ArcOdometryAlgorithmForTwoWheels{ // If one side encoder is disabled
 					perceivedCoords [0] += deltaCoords [0];
 					perceivedCoords [1] += deltaCoords [1];
 				} else {
-					deltaCoords [0] = -Math.sin(perceivedHeading) * (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.cos(perceivedHeading) * (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
-					deltaCoords [1] = Math.cos(perceivedHeading) * (deltaTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.sin(perceivedHeading) * (deltaTicks [1] * inPerTickRight + deltaTicks [0] * inPerTickLeft) / 2d;
+					deltaCoords [0] = -Math.sin(perceivedHeading) * (accumulatedTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.cos(perceivedHeading) * (accumulatedTicks [1] * inPerTickRight + accumulatedTicks [0] * inPerTickLeft) / 2d;
+					deltaCoords [1] = Math.cos(perceivedHeading) * (accumulatedTicks [2] * inPerTickFront - deltaRadians * distanceToFront) + Math.sin(perceivedHeading) * (accumulatedTicks [1] * inPerTickRight + accumulatedTicks [0] * inPerTickLeft) / 2d;
 
 					perceivedCoords [0] += deltaCoords [0];
 					perceivedCoords [1] += deltaCoords [1];
 				}
+
+				// Reset tick accumulation
+				accumulatedTicks [0] = 0;
+				accumulatedTicks [1] = 0;
+				accumulatedTicks [2] = 0;
 		}
 	}
 }
